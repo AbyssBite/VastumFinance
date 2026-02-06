@@ -1,7 +1,7 @@
 import uvicorn
 from typing import Annotated
 from pydantic import BaseModel
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Form
 from contextlib import asynccontextmanager
 from sqlalchemy import String, REAL, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession,
 )
+
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+from fastapi.responses import RedirectResponse
+
+templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
 engine = create_async_engine("sqlite+aiosqlite:///expense_tracker.db")
@@ -63,7 +69,7 @@ def root():
 
 
 @app.post(path="/expenses")
-async def add_expense(expense: Expense, session: AsyncSession = Depends(get_session)):
+async def add_expense(expense: Expense, session: SessionDep):
     new_expense = ExpenseModel(**expense.dict())
     session.add(new_expense)
     await session.commit()
@@ -78,7 +84,7 @@ async def add_expense(expense: Expense, session: AsyncSession = Depends(get_sess
 
 
 @app.get(path="/expenses")
-async def get_expenses(session: AsyncSession = Depends(get_session)):
+async def get_expenses(session: SessionDep):
     result = await session.execute(select(ExpenseModel))
     expenses = result.scalars().all()
 
@@ -87,6 +93,29 @@ async def get_expenses(session: AsyncSession = Depends(get_session)):
         for e in expenses
     ]
 
+@app.get(path="/dashboard")
+async def dashboard(request: Request, session: SessionDep):
+    result = await session.execute(select(ExpenseModel))
+    expenses = result.scalars().all()
+
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "expenses": expenses}
+    )
+
+
+@app.post(path="/expenses_form")
+async def expenses_form(
+    description: str = Form(...),
+    amount: float = Form(...),
+    date: str = Form(...),
+    session: AsyncSession = Depends(get_session),
+):
+    new_expense = ExpenseModel(description=description, amount=amount, date=date)
+    session.add(new_expense)
+    await session.commit()
+    await session.refresh(new_expense)
+
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", reload=True)
