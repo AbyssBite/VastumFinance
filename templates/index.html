@@ -8,6 +8,9 @@
 </head>
 
 <body>
+    <h2>Summary</h2>
+    <p>Total Expenses: {{ total_count }}</p>
+    <p>Total Amount: ${{ "%.2f"|format(total_amount) }}</p>
     <h1>Expenses</h1>
     <table border="1">
         <tr>

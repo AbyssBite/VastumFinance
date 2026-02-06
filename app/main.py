@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel
 from fastapi import FastAPI, Depends, Form
 from contextlib import asynccontextmanager
-from sqlalchemy import String, REAL, select
+from sqlalchemy import String, REAL, select, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -50,7 +50,6 @@ class Expense(BaseModel):
 
 async def db_init():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
 
@@ -93,13 +92,28 @@ async def get_expenses(session: SessionDep):
         for e in expenses
     ]
 
-@app.get(path="/dashboard")
-async def dashboard(request: Request, session: SessionDep):
+@app.get("/dashboard")
+async def dashboard(request: Request, session: AsyncSession = Depends(get_session)):
+    # Fetch all expenses
     result = await session.execute(select(ExpenseModel))
     expenses = result.scalars().all()
 
+    # Aggregate totals in a single query
+    agg_result = await session.execute(
+        select(
+            func.count(ExpenseModel.id), func.coalesce(func.sum(ExpenseModel.amount), 0)
+        )
+    )
+    total_count, total_amount = agg_result.one()  # unpack the single row
+
     return templates.TemplateResponse(
-        "index.html", {"request": request, "expenses": expenses}
+        "index.html",
+        {
+            "request": request,
+            "expenses": expenses,
+            "total_count": total_count,
+            "total_amount": total_amount,
+        },
     )
 
 
